@@ -1,11 +1,6 @@
-# The build stage does `COPY . .`, so everything here is both a smaller context and a guard: a
-# host node_modules copied into the image would shadow the one pnpm just installed — with the
-# wrong platform's native binaries — and a stale dist/ would be served instead of the one this
-# build produced.
-node_modules
-dist
-.angular
-out-tsc
-coverage
-.git
-.vscode
+# The Dockerfile COPYs exactly two things — the built bundle and the nginx config — so the
+# context is allow-listed down to them. Everything else (sources, node_modules, .git) never
+# travels to the daemon, and a COPY of anything new must be added here to work, loudly.
+*
+!dist/qits-spa-home/browser
+!docker/nginx.conf

@@ -5,8 +5,8 @@ that installs `@qits/ui-components` and `@qits/angular` from qits' own registry 
 dependencies, and ships as an nginx image its own pipeline builds and qits-cd deploys.
 
 Nothing here is a demo harness. The two packages arrive as tarballs from `qits-artifacts`, every
-other dependency arrives through that service's pull-through cache of npmjs, and the image build
-repeats the same install rather than copying a `dist/` someone produced by hand.
+other dependency arrives through that service's pull-through cache of npmjs, and the image wraps
+the `dist/` that the pipeline's own tested build produced — the Dockerfile fetches nothing.
 
 ## The .npmrc
 
@@ -22,13 +22,11 @@ the `_authToken` line the library repos' pipelines carry exists only because the
 to `publish` with no credential configured — a pre-flight that never reaches the wire. Nothing here
 publishes, and an install has no such pre-flight, so there is nothing to carry.
 
-`localhost:8081` is the local platform's host-published qits-artifacts port, and it is the right
-address in both places that matter:
-
-- **a developer on the deployment host** dials it directly, inside the trusted surface;
-- **the image build** dials it too, because a `docker: true` step drives the *host's* daemon, so
-  the build runs on the host — with `--network=host`, without which the build container's own
-  loopback has nothing on it.
+`localhost:8081` is the local platform's host-published qits-artifacts port, and it serves the one
+consumer the file exists for: **a developer on the deployment host**, dialling it directly inside
+the trusted surface. The image build reads no registry at all — the Dockerfile is hermetic (see its
+header for why a build that fetches cannot work on every daemon this platform targets), and CI
+overrides the file with environment.
 
 Access from anywhere else goes through the gateway's usual session auth and is out of scope.
 
@@ -82,28 +80,27 @@ and its shape is `@qits/angular`'s, not this repo's invention.
 ## The image
 
 ```bash
-docker build --network=host -t qits-spa-home:dev -f docker/Dockerfile .
+pnpm build
+docker build -t qits-spa-home:dev -f docker/Dockerfile .
 docker run --rm -p 8080:8080 qits-spa-home:dev
 ```
 
-A node stage installs with the committed `.npmrc` and runs `pnpm build`; an nginx stage serves
+The Dockerfile is hermetic — it COPYs the `dist/` that `pnpm build` just produced; nginx serves
 `dist/qits-spa-home/browser` on **8080** — the port every qits component listens on inside its
 container — with an SPA fallback (`try_files $uri $uri/ /index.html`) so a client-side route
 survives a refresh. Only hashed bundles are cached long; `index.html` and `api/config.json` never
 are.
 
-`--network=host` is required, for the reason in the `.npmrc` section above.
-
 ## Pipeline
 
-`.config/qits/ci-post-receive.yml`, two steps:
+`.config/qits/ci-post-receive.yml`, one step on `node-docker-base` with `docker: true`: install
+(registries from the environment), lint, test, build — then `docker build` and push
+`qits-spa-home:$QITS_CI_SHA` to `$QITS_REGISTRY/$QITS_IMAGE_REPOSITORY`, the tag qits-cd resolves
+an application by.
 
-1. `node-base` — install (registries from the environment), lint, test, build. No docker socket:
-   this step keeps the full sandbox.
-2. `ci-base` with `docker: true` — `docker build --network=host` and push
-   `qits-spa-home:$QITS_CI_SHA` to `$QITS_REGISTRY/$QITS_IMAGE_REPOSITORY`, the tag qits-cd
-   resolves an application by.
-
-Each step is a fresh container with its own clone, so the second installs the dependency tree again
-inside the image build. That is not waste: the image must be built from the manifest and the
-lockfile, not from an artifact the previous step happened to leave behind.
+One step rather than two is load-bearing, not convenience: steps share no state, and a build
+container spawned by the host's daemon cannot reach the registry on every daemon this platform
+targets (the pipeline file records the specifics). So the install and build happen in the step
+container — which is on qits-net — and the image build only COPYs the result out of the step's own
+checkout. The image is still built from a tree that went green: the same step just proved it, three
+commands earlier.

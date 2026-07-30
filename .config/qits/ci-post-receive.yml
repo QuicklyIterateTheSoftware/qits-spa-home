@@ -1,17 +1,19 @@
 # The pipeline qits-ci runs on every push to a tracked branch of this repository.
 #
-# Two steps, split because they need different things from the platform. The first is an ordinary
-# sandboxed step that installs, lints, tests and builds; the second gives up that sandbox for the
-# host's docker socket (`docker: true`) to build and push the image. Steps are sequential and a
-# failed step fails the run, so the image is only ever built from a tree that went green.
+# One step, and the shape is load-bearing: the app is built HERE, in the step container, and the
+# docker build only COPYs the result. A build container spawned by the host's daemon can reach
+# neither qits-net (buildkit rejects custom networks) nor, on every daemon this platform targets,
+# the host-published registry port — so an image build that runs `pnpm install` itself is
+# unbuildable on some machines by construction. This step container IS on qits-net, so the
+# install happens where the registry is reachable and the Dockerfile stays hermetic.
 #
-# Each step is a FRESH container with its OWN clone — nothing carries across, not node_modules and
-# not an edited file. That is why the second step installs the dependencies all over again inside
-# the image build, and why it sees the committed .npmrc exactly as it was pushed.
+# That is also why the image is node-docker-base rather than node-base: this one step needs both
+# the toolchain and the docker CLI. It declares `docker: true` and gives up the ordinary step
+# sandbox for the host's socket — the price every image-publishing step pays.
 steps:
-  # --- 1. install, lint, test, build ------------------------------------------------------------
-  - image: qits/build-images/node-base:latest
-    timeout-seconds: 1800
+  - image: qits/build-images/node-docker-base:latest
+    docker: true
+    timeout-seconds: 3600
     script: |
       # The daemon runs this with `bash -c` and no -e, so without this an early failure would be
       # swallowed by the next command's exit code. -u is load-bearing too: an unset registry var
@@ -19,16 +21,16 @@ steps:
       # packages do not exist and never will.
       set -eu
 
-      # ENVIRONMENT, not a file, and that is the whole subtlety of this repo's CI.
+      # ENVIRONMENT, not a file, and that is the subtlety of this repo's CI.
       #
       # This repository COMMITS an .npmrc (localhost:8081 — the platform's host-published port,
-      # right for a developer on the host and for the image build in step 2). npm and pnpm rank a
-      # project .npmrc ABOVE ~/.npmrc, so the `cat > ~/.npmrc` preamble the library repos use
-      # would be written, ignored, and leave this step dialling a port that does not exist inside
-      # a step container. `npm_config_*` environment outranks both, so it wins without touching
-      # the working tree — verified: `npm_config_@qits:registry` is honoured by npm and pnpm alike.
+      # right for a developer on the host). npm and pnpm rank a project .npmrc ABOVE ~/.npmrc, so
+      # the `cat > ~/.npmrc` preamble the library repos use would be written, ignored, and leave
+      # this step dialling a port that does not exist inside a step container. `npm_config_*`
+      # environment outranks both, so it wins without touching the working tree — verified:
+      # `npm_config_@qits:registry` is honoured by npm and pnpm alike.
       #
-      # Only the install needs it; lint, test and build touch no registry.
+      # Only the install needs it; lint, test, build and the docker build touch no registry.
       env npm_config_registry="$QITS_NPM_PROXY_URL" \
           "npm_config_@qits:registry=$QITS_NPM_REGISTRY_URL" \
           pnpm install --frozen-lockfile
@@ -40,22 +42,9 @@ steps:
 
       pnpm build
 
-  # --- 2. image ---------------------------------------------------------------------------------
-  - image: qits/build-images/ci-base:latest
-    docker: true
-    timeout-seconds: 3600
-    script: |
-      set -eu
-
-      # `--network=host` is the one line here that is not boilerplate. The image build runs
-      # `pnpm install` against the .npmrc committed in this repo, which points at
-      # http://localhost:8081 — the host's published qits-artifacts port. This step drives the
-      # HOST's daemon through its socket, so the build happens on the host; but a build container
-      # on the default bridge network has its own loopback with nothing on it. --network=host puts
-      # the build where 8081 actually is. Without it the failure reads as a registry outage.
-      #
-      # The tag is the whole contract with qits-cd: <registry>/<repository>/<this repo's name>:<sha>.
+      # The tag is the whole contract with qits-cd: <registry>/<repository>/<repo name>:<sha>.
+      # No --network flag: the Dockerfile fetches nothing, see its header.
       ref="$QITS_REGISTRY/$QITS_IMAGE_REPOSITORY/qits-spa-home:$QITS_CI_SHA"
-      docker build --network=host -t "$ref" -f docker/Dockerfile .
+      docker build -t "$ref" -f docker/Dockerfile .
       docker push "$ref"
       docker rmi "$ref" || true
