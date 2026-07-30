@@ -1314,14 +1314,14 @@ packages:
     engines: {node: '>= 10.0.0'}
 
   '@qits/angular@0.0.1':
-    resolution: {integrity: sha512-jfAlZB1KTqfYKJ8tc/N7hbHZL6eHTAshNWVIbYfi9pxN4cFPH8Z/ERolBVZ6SqjQ+bnHbJBJhOIA+1NGCc2tUQ==}
+    resolution: {integrity: sha512-032M3PATATuQq66I9FbTwNHs6YfmYJOc3OunOe1rpHMMFVInkIVpVczo5KFAMqE/2j8VPuD/LMEO0wFAhnyZNg==}
     peerDependencies:
       '@angular/core': ^21.2.0
       '@angular/router': ^21.2.0
       '@ngrx/signals': ^21.0.0
 
   '@qits/ui-components@0.0.1':
-    resolution: {integrity: sha512-zSewjZdxB6d5Lbmk2xnruM3pM6Qbl+tkH92B9w1Gh97kZk06vjCIvE22D9uEPEVis/VDshS2O+GPrQ9I+cLdtg==}
+    resolution: {integrity: sha512-yTupwb6/cRkfHNsD9Q/dHDmS99cjvhSeBUHLAVsETY0e+2/jhf7nG7kdRXoCb9ObqTCPVP3m2PyUykWPXV0VBA==}
     peerDependencies:
       '@angular/common': ^21.2.0
       '@angular/core': ^21.2.0
