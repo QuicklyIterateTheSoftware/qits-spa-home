@@ -70,17 +70,58 @@ npm run build        # dist/qits-spa-home/browser
 
 ## The page
 
-`src/app/app.ts` is the whole application: a standalone root component that builds its shell out of
-`<qits-card>`, `<qits-badge>` and `<qits-button>` from `@qits/ui-components`. There is no router
-yet — one page, no routes to wire — and `provideRouter` goes into `app.config.ts` the day that
-changes.
+`src/app/app.ts` is the shell and holds a single `<router-outlet>`; the landing page itself is
+`src/app/home/home.ts`, a standalone component behind the `''` route that builds its content out
+of `<qits-card>`, `<qits-badge>` and `<qits-button>` from `@qits/ui-components`.
+
+## Routing, and the one thing this SPA does differently
+
+Every other qits client is mounted under a segment it owns outright (`/projects/`, `/ci/`, …), so
+its wildcard route means one unambiguous thing: a bad URL inside its own app. **This one is
+mounted at the gateway root**, which makes the same wildcard ambiguous — `/projects` is not a typo,
+it is another micro frontend — so the catch-all has to be able to *let go* of a URL.
+
+`src/app/mfe-exit/` is that catch-all, and it holds **no list of segments**: which segment belongs
+to which service is the gateway's knowledge, and a copy of it here would be a second source of
+truth that rots in silence. It decides on how the URL arrived instead:
+
+| How `**` was reached                                                    | What it means                                                                                                     | What it does                                                                                             |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Initial** navigation (`router.navigated === false` during activation) | the server served the document for this very URL, so the gateway already found no owner and fell back to this SPA | render a branded 404                                                                                     |
+| **Subsequent** navigation (`router.navigated === true`)                 | a link or `router.navigate` inside this app aimed outside its own routes                                          | `window.location.assign(url)` — a full document navigation the gateway then routes to the owning service |
+
+**It cannot loop.** Only one branch navigates. A full navigation ends this document; if the gateway
+finds no owner for that URL either, the SPA it serves back is a *fresh* app whose first navigation
+is by definition the initial one — the branch that never navigates. One hop, then a rendered page.
+
+`router.navigated` is the chosen signal because it states that fact directly: Angular sets it on
+the first `NavigationEnd`, and component activation happens before that event fires. The URL handed
+over comes from `router.getCurrentNavigation()`, **not** from `window.location`: Angular's default
+`urlUpdateStrategy` is `deferred`, so during activation the address bar still holds the URL being
+left — reading it there would send the browser to the page it is already on, which is the one way
+this design could have looped.
+
+**Cross-app links are plain `href` anchors, never `routerLink`.** A `routerLink` to `/projects`
+asks this app's router to handle it, and the escape hatch above exists to catch the ones that slip
+through — not to make them the normal path. `routerLink` is for routes in `app.routes.ts` and
+nothing else.
+
+One test-only seam is worth knowing about: the hand-off goes through the `LEAVE_APP` injection
+token, whose default factory is exactly `window.location.assign`. That indirection is not a design
+preference — under jsdom every property of a `Location` is own, non-writable and non-configurable
+(`[LegacyUnforgeable]`), so `vi.spyOn(window.location, 'assign')` throws and there is no other way
+to assert the branch that leaves.
+
+## The integration
 
 `@qits/angular` is wired the way its README documents, and the ordering in `main.ts` is
 load-bearing: `initQitsIntegration()` must complete *before* `bootstrapApplication`, because
 Angular's `FetchBackend` captures `window.fetch` on first use and the fetch instrumentation has to
-patch it first. `app.config.ts` then provides `provideHttpClient(withFetch())` (the default XHR
-backend is invisible to that instrumentation), `provideBrowserGlobalErrorListeners()` and
-`provideQitsIntegration(withFeatureCapture())`.
+patch it first. `app.config.ts` then provides `provideBrowserGlobalErrorListeners()`,
+`provideRouter(routes)` — without which the integration's Navigation spans and `app.route.*`
+stamping have nothing to report — `provideHttpClient(withFetch())` (the default XHR backend is
+invisible to that instrumentation) and `provideQitsIntegration(withFeatureCapture())`, in that
+order.
 
 All of it is **gated by `api/config.json`**, which the library fetches base-relative at startup.
 This deployment ships `public/api/config.json` reporting both relays as `null`:

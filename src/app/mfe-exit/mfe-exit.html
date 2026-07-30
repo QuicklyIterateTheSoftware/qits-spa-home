@@ -1,0 +1,29 @@
+<main class="page">
+  @if (leaving()) {
+    <qits-card heading="Taking you there" subheading="this page belongs to another qits service">
+      <p class="lede">
+        <code>{{ target() }}</code> is served by whichever micro frontend owns that segment, so the
+        browser is leaving this app to fetch it.
+      </p>
+    </qits-card>
+  } @else {
+    <header class="masthead">
+      <div class="masthead-title">
+        <h1>Not found</h1>
+        <qits-badge label="404" tone="warning" />
+      </div>
+      <p class="lede">
+        Nothing on this platform answers to <code>{{ target() }}</code> — the gateway found no
+        service that owns it, and neither does the landing page.
+      </p>
+    </header>
+
+    <qits-card heading="Where to instead">
+      <ul class="exits">
+        <!-- routerLink, because '' is this app's own route. A link to another micro frontend is a
+             plain href instead — see the README's note on cross-app links. -->
+        <li><a routerLink="/">The landing page</a></li>
+      </ul>
+    </qits-card>
+  }
+</main>
