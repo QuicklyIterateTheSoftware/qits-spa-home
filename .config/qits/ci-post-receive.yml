@@ -1,0 +1,61 @@
+# The pipeline qits-ci runs on every push to a tracked branch of this repository.
+#
+# Two steps, split because they need different things from the platform. The first is an ordinary
+# sandboxed step that installs, lints, tests and builds; the second gives up that sandbox for the
+# host's docker socket (`docker: true`) to build and push the image. Steps are sequential and a
+# failed step fails the run, so the image is only ever built from a tree that went green.
+#
+# Each step is a FRESH container with its OWN clone — nothing carries across, not node_modules and
+# not an edited file. That is why the second step installs the dependencies all over again inside
+# the image build, and why it sees the committed .npmrc exactly as it was pushed.
+steps:
+  # --- 1. install, lint, test, build ------------------------------------------------------------
+  - image: qits/build-images/node-base:latest
+    timeout-seconds: 1800
+    script: |
+      # The daemon runs this with `bash -c` and no -e, so without this an early failure would be
+      # swallowed by the next command's exit code. -u is load-bearing too: an unset registry var
+      # must stop the step, not quietly resolve the @qits scope against npmjs.org, where these
+      # packages do not exist and never will.
+      set -eu
+
+      # ENVIRONMENT, not a file, and that is the whole subtlety of this repo's CI.
+      #
+      # This repository COMMITS an .npmrc (localhost:8081 — the platform's host-published port,
+      # right for a developer on the host and for the image build in step 2). npm and pnpm rank a
+      # project .npmrc ABOVE ~/.npmrc, so the `cat > ~/.npmrc` preamble the library repos use
+      # would be written, ignored, and leave this step dialling a port that does not exist inside
+      # a step container. `npm_config_*` environment outranks both, so it wins without touching
+      # the working tree — verified: `npm_config_@qits:registry` is honoured by npm and pnpm alike.
+      #
+      # Only the install needs it; lint, test and build touch no registry.
+      env npm_config_registry="$QITS_NPM_PROXY_URL" \
+          "npm_config_@qits:registry=$QITS_NPM_REGISTRY_URL" \
+          pnpm install --frozen-lockfile
+
+      pnpm lint
+
+      # The jsdom target. This image has no browser and CI is not the place to download one.
+      pnpm test
+
+      pnpm build
+
+  # --- 2. image ---------------------------------------------------------------------------------
+  - image: qits/build-images/ci-base:latest
+    docker: true
+    timeout-seconds: 3600
+    script: |
+      set -eu
+
+      # `--network=host` is the one line here that is not boilerplate. The image build runs
+      # `pnpm install` against the .npmrc committed in this repo, which points at
+      # http://localhost:8081 — the host's published qits-artifacts port. This step drives the
+      # HOST's daemon through its socket, so the build happens on the host; but a build container
+      # on the default bridge network has its own loopback with nothing on it. --network=host puts
+      # the build where 8081 actually is. Without it the failure reads as a registry outage.
+      #
+      # The tag is the whole contract with qits-cd: <registry>/<repository>/<this repo's name>:<sha>.
+      ref="$QITS_REGISTRY/$QITS_IMAGE_REPOSITORY/qits-spa-home:$QITS_CI_SHA"
+      docker build --network=host -t "$ref" -f docker/Dockerfile .
+      docker push "$ref"
+      docker rmi "$ref" || true
