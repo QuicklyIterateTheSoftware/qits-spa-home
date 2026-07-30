@@ -1,0 +1,11 @@
+# The build stage does `COPY . .`, so everything here is both a smaller context and a guard: a
+# host node_modules copied into the image would shadow the one pnpm just installed — with the
+# wrong platform's native binaries — and a stale dist/ would be served instead of the one this
+# build produced.
+node_modules
+dist
+.angular
+out-tsc
+coverage
+.git
+.vscode
