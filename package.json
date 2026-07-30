@@ -2,13 +2,12 @@
   "name": "qits-spa-home",
   "version": "0.0.0",
   "private": true,
-  "description": "The platform's landing page: an Angular application that consumes @qits/ui-components and @qits/angular from qits' own npm registry and ships as an nginx image.",
+  "description": "The platform's landing page: an Angular application that consumes @qits/ui-components and @qits/angular from qits' own npm registry. It ships no image — qits-gateway serves it via Quinoa.",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/QuicklyIterateTheSoftware/qits-spa-home.git"
   },
-  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
@@ -28,17 +27,6 @@
     "@qits/ui-components": "^0.0.1",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
-  },
-  "pnpm": {
-    "packageExtensions": {
-      "@opentelemetry/instrumentation-user-interaction": {
-        "peerDependenciesMeta": {
-          "zone.js": {
-            "optional": true
-          }
-        }
-      }
-    }
   },
   "devDependencies": {
     "@angular-eslint/builder": "21.4.0",

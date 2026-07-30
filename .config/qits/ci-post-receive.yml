@@ -9,22 +9,23 @@ steps:
     timeout-seconds: 1800
     script: |
       # The daemon runs this with `bash -c` and no -e, so without this an early failure would be
-      # swallowed by the next command's exit code. -u is load-bearing too: an unset registry var
-      # must stop the step, not quietly resolve the @qits scope against npmjs.org, where these
-      # packages do not exist and never will.
+      # swallowed by the next command's exit code.
       set -eu
 
-      # ENVIRONMENT, not a file. This repository COMMITS an .npmrc (localhost:8081, right for a
-      # developer on the host), and npm and pnpm rank a project .npmrc ABOVE ~/.npmrc — so the
-      # `cat > ~/.npmrc` preamble the library repos use would be written and silently ignored.
-      # `npm_config_*` environment outranks both files, so it wins without touching the tree.
-      env npm_config_registry="$QITS_NPM_PROXY_URL" \
-          "npm_config_@qits:registry=$QITS_NPM_REGISTRY_URL" \
-          pnpm install --frozen-lockfile
+      # npm lockfiles pin full resolved URLs, and this one is generated on the deployment host, so
+      # every entry names http://localhost:8081 — unreachable from a step container, where the same
+      # service is http://qits-artifacts:8080. The paths are identical on both addresses, so a pure
+      # host swap makes the lockfile resolvable here. npm's own knob for this
+      # (--replace-registry-host=always) cannot do it: it substitutes the configured registry's URL
+      # *including its path* while keeping the resolved path too, and against this platform's
+      # path-mounted registries that yields /artifacts/npm/npmjs/artifacts/npm/npm/… and a 404.
+      sed -i 's|http://localhost:8081/|http://qits-artifacts:8080/|g' package-lock.json
 
-      pnpm lint
+      npm ci --no-audit --no-fund
+
+      npm run lint
 
       # The jsdom target. This image has no browser and CI is not the place to download one.
-      pnpm test
+      npm test
 
-      pnpm build
+      npm run build

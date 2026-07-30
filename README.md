@@ -29,25 +29,25 @@ bundle that was built where the registry is reachable — nothing else ever read
 
 Access from anywhere else goes through the gateway's usual session auth and is out of scope.
 
-**In CI the file is outranked, not edited.** npm and pnpm rank a project `.npmrc` above `~/.npmrc`,
-so the `cat > ~/.npmrc` preamble the library repos use would be silently ignored here. The pipeline
-sets `npm_config_registry` / `npm_config_@qits:registry` from `$QITS_NPM_PROXY_URL` /
-`$QITS_NPM_REGISTRY_URL` instead — environment outranks both files, and the working tree stays as
-it was pushed.
-
-**The lockfile is portable.** pnpm records `name@version` plus an integrity hash and no URL, so
-`pnpm-lock.yaml` names no host and no port: the same lockfile resolves against `localhost:8081`, a
-qits-net alias, or npmjs.org, and the integrity hash is what makes that safe rather than merely
-convenient.
+**The lockfile is NOT host-portable, and CI compensates.** npm lockfiles pin full resolved URLs,
+and this one is generated on the deployment host, so every entry names `localhost:8081`. Inside a
+step container the same service is `qits-artifacts:8080`; the paths are identical on both
+addresses, so the pipeline's first act is a pure host swap in its own fresh clone
+(`sed 's|http://localhost:8081/|http://qits-artifacts:8080/|g' package-lock.json`) and then a plain
+`npm ci`. npm's own `--replace-registry-host=always` cannot do this: it substitutes the configured
+registry's URL *including its path* while keeping the resolved path too, which against
+path-mounted registries produces `/artifacts/npm/npmjs/artifacts/npm/npm/…` and a 404. The
+integrity hashes are what make the swap safe — bytes from the other address must still hash the
+same.
 
 ## Development
 
 ```bash
-pnpm install         # via the .npmrc above — the platform must be up
-pnpm start           # ng serve, http://localhost:4200
-pnpm lint
-pnpm test            # vitest on jsdom
-pnpm build           # dist/qits-spa-home/browser
+npm ci               # via the .npmrc above — the platform must be up
+npm start            # ng serve, http://localhost:4200
+npm run lint
+npm test             # vitest on jsdom
+npm run build        # dist/qits-spa-home/browser
 ```
 
 ## The page
@@ -84,11 +84,11 @@ door — SPA fallback included, so client-side routes survive a refresh. The gat
 `GET /api/config.json` answers instead of the `public/api/config.json` stub, which exists so a
 standalone `ng serve` still has the shape the `@qits/angular` gate expects.
 
-Local image-less serving is just `pnpm start`. Updating what the gateway ships is a push here
+Local image-less serving is just `npm start`. Updating what the gateway ships is a push here
 (keeps main green) followed by the gateway's own pipeline run, which picks up this repo's `main`.
 
 ## Pipeline
 
-`.config/qits/ci-post-receive.yml`, one ordinary sandboxed step on `node-base`: install
-(registries from the environment), lint, test, build. No docker socket, no publish, no image —
-the gateway's pipeline is where the bundle becomes deployable.
+`.config/qits/ci-post-receive.yml`, one ordinary sandboxed step on `node-base`: the lockfile host
+swap, `npm ci`, lint, test, build. No docker socket, no publish, no image — the gateway's pipeline
+is where the bundle becomes deployable.
