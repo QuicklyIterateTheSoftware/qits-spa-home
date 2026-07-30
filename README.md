@@ -29,16 +29,34 @@ bundle that was built where the registry is reachable — nothing else ever read
 
 Access from anywhere else goes through the gateway's usual session auth and is out of scope.
 
-**The lockfile is NOT host-portable, and CI compensates.** npm lockfiles pin full resolved URLs,
-and this one is generated on the deployment host, so every entry names `localhost:8081`. Inside a
-step container the same service is `qits-artifacts:8080`; the paths are identical on both
-addresses, so the pipeline's first act is a pure host swap in its own fresh clone
-(`sed 's|http://localhost:8081/|http://qits-artifacts:8080/|g' package-lock.json`) and then a plain
-`npm ci`. npm's own `--replace-registry-host=always` cannot do this: it substitutes the configured
-registry's URL *including its path* while keeping the resolved path too, which against
-path-mounted registries produces `/artifacts/npm/npmjs/artifacts/npm/npm/…` and a 404. The
-integrity hashes are what make the swap safe — bytes from the other address must still hash the
-same.
+**In CI the file is outranked, not edited.** npm ranks a project `.npmrc` above `~/.npmrc`, so the
+`cat > ~/.npmrc` preamble the library repos use would be written and silently ignored here. The
+pipeline sets `npm_config_registry` / `npm_config_@qits:registry` from `$QITS_NPM_PROXY_URL` /
+`$QITS_NPM_REGISTRY_URL` instead — environment outranks both files, and no deployment address is
+spelled in the recipe.
+
+**The lockfile is the exception, because npm gives no other option.** npm pins a full resolved URL
+per package, so `package-lock.json` names `localhost:8081` roughly seven hundred times, and `npm
+ci` fetches tarballs by that URL without ever asking the configured registry for them — the
+environment override above does not reach them. Inside a step container that address does not
+exist. The paths are identical on both addresses, so the pipeline's first act is to replace the
+*origin* of every `resolved` in its own clone, derived from `$QITS_NPM_PROXY_URL`, and then run
+`npm ci`. The integrity hashes are what make the swap safe: bytes from the other address must
+still hash the same.
+
+npm's own knob for exactly this, `--replace-registry-host=always`, cannot do it against a registry
+mounted under a path — which qits-artifacts is. `@npmcli/arborist` glues rather than resolves
+(`reify.js`: `registry.slice(0, -1) + resolvedURL.pathname`), so
+`…/artifacts/npm/npmjs/` + `/artifacts/npm/npmjs/zone.js/-/…tgz` comes out as
+`…/artifacts/npm/npmjs/artifacts/npm/npmjs/zone.js/-/…tgz` and every tarball 404s. Measured on npm
+10.9.4; the day npm resolves that URL instead of concatenating it, the swap goes away.
+
+**One pnpm-ism needed no npm replacement.** `pnpm-lock.yaml`'s time here came with a
+`packageExtensions` patch making `zone.js` an optional peer of
+`@opentelemetry/instrumentation-user-interaction`. npm installs missing peer dependencies rather
+than failing on them, so a plain `npm install` resolves it with no `overrides` and no warning:
+`zone.js` lands in `node_modules` as a peer of that package and of `@angular/core`, and stays
+inert — this app is zoneless and `angular.json` declares no polyfill that would load it.
 
 ## Development
 
@@ -89,6 +107,6 @@ Local image-less serving is just `npm start`. Updating what the gateway ships is
 
 ## Pipeline
 
-`.config/qits/ci-post-receive.yml`, one ordinary sandboxed step on `node-base`: the lockfile host
-swap, `npm ci`, lint, test, build. No docker socket, no publish, no image — the gateway's pipeline
-is where the bundle becomes deployable.
+`.config/qits/ci-post-receive.yml`, one ordinary sandboxed step on `node-base`: the lockfile origin
+swap, `npm ci` (registries from the environment), lint, test, build. No docker socket, no publish,
+no image — the gateway's pipeline is where the bundle becomes deployable.
