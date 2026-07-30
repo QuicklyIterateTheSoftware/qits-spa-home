@@ -1,0 +1,68 @@
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 20px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.masthead-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.masthead h1 {
+  margin: 0;
+  font-size: 32px;
+  letter-spacing: -0.02em;
+}
+
+.lede {
+  margin: 8px 0 0;
+  color: #4b5563;
+  max-width: 60ch;
+}
+
+.origins {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.origins li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detail {
+  margin: 16px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid #f3f4f6;
+  color: #4b5563;
+}
+
+.capture-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.capture-message {
+  margin: 12px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}

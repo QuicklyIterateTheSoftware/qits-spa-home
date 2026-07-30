@@ -1,0 +1,65 @@
+<main class="page">
+  <header class="masthead">
+    <div class="masthead-title">
+      <h1>qits</h1>
+      <qits-badge label="home" tone="info" />
+    </div>
+    <p class="lede">
+      The platform's landing page. Everything it is built from was installed from the platform's own
+      npm registry, and the image serving it was built by the platform's own pipeline.
+    </p>
+  </header>
+
+  <qits-card
+    heading="Where this page comes from"
+    subheading="one .npmrc, two repositories, no npmjs.org in the build"
+    elevated
+  >
+    <qits-button qitsCardActions size="sm" variant="secondary" (pressed)="toggleDetails($event)">
+      {{ detailsOpen() ? 'Hide the route' : 'Show the route' }}
+    </qits-button>
+
+    <ul class="origins">
+      @for (origin of origins; track origin.name) {
+        <li>
+          <code>{{ origin.name }}</code>
+          <qits-badge [label]="origin.source" [tone]="origin.tone" />
+        </li>
+      }
+    </ul>
+
+    @if (detailsOpen()) {
+      <p class="detail">
+        The <code>&#64;qits</code> scope resolves to <code>/artifacts/npm/npm/</code>, the hosted
+        repository the library pipelines publish into. Everything else resolves to
+        <code>/artifacts/npm/npmjs/</code>, a pull-through cache of npmjs — so a tarball is fetched
+        from the public internet once, by the platform, and never again by a build.
+      </p>
+    }
+  </qits-card>
+
+  <qits-card heading="Capture this page" subheading="@qits/angular, wired and callable">
+    <p>
+      Snapshots the running page into a qits workspace. It works when the deployment's
+      <code>api/config.json</code> reports a capture relay, and says so plainly when it does not.
+    </p>
+
+    <div class="capture-row">
+      <qits-button
+        variant="primary"
+        [busy]="capture() === 'working'"
+        (pressed)="captureThisPage($event)"
+      >
+        Capture
+      </qits-button>
+
+      @if (capture() !== 'idle') {
+        <qits-badge [label]="capture()" [tone]="captureTone(capture())" />
+      }
+    </div>
+
+    @if (captureMessage()) {
+      <p class="capture-message">{{ captureMessage() }}</p>
+    }
+  </qits-card>
+</main>
