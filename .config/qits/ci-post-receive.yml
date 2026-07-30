@@ -1,19 +1,12 @@
 # The pipeline qits-ci runs on every push to a tracked branch of this repository.
 #
-# One step, and the shape is load-bearing: the app is built HERE, in the step container, and the
-# docker build only COPYs the result. A build container spawned by the host's daemon can reach
-# neither qits-net (buildkit rejects custom networks) nor, on every daemon this platform targets,
-# the host-published registry port — so an image build that runs `pnpm install` itself is
-# unbuildable on some machines by construction. This step container IS on qits-net, so the
-# install happens where the registry is reachable and the Dockerfile stays hermetic.
-#
-# That is also why the image is node-docker-base rather than node-base: this one step needs both
-# the toolchain and the docker CLI. It declares `docker: true` and gives up the ordinary step
-# sandbox for the host's socket — the price every image-publishing step pays.
+# One ordinary sandboxed step, and no image: this repository does not ship a container. The app is
+# packaged and served by qits-gateway, which carries this repo as a git submodule at its Quinoa
+# ui-dir and builds it into the gateway image — so this pipeline's job is to keep main green
+# (install, lint, test, build), and the gateway's pipeline is where the bundle becomes deployable.
 steps:
-  - image: qits/build-images/node-docker-base:latest
-    docker: true
-    timeout-seconds: 3600
+  - image: qits/build-images/node-base:latest
+    timeout-seconds: 1800
     script: |
       # The daemon runs this with `bash -c` and no -e, so without this an early failure would be
       # swallowed by the next command's exit code. -u is load-bearing too: an unset registry var
@@ -21,16 +14,10 @@ steps:
       # packages do not exist and never will.
       set -eu
 
-      # ENVIRONMENT, not a file, and that is the subtlety of this repo's CI.
-      #
-      # This repository COMMITS an .npmrc (localhost:8081 — the platform's host-published port,
-      # right for a developer on the host). npm and pnpm rank a project .npmrc ABOVE ~/.npmrc, so
-      # the `cat > ~/.npmrc` preamble the library repos use would be written, ignored, and leave
-      # this step dialling a port that does not exist inside a step container. `npm_config_*`
-      # environment outranks both, so it wins without touching the working tree — verified:
-      # `npm_config_@qits:registry` is honoured by npm and pnpm alike.
-      #
-      # Only the install needs it; lint, test, build and the docker build touch no registry.
+      # ENVIRONMENT, not a file. This repository COMMITS an .npmrc (localhost:8081, right for a
+      # developer on the host), and npm and pnpm rank a project .npmrc ABOVE ~/.npmrc — so the
+      # `cat > ~/.npmrc` preamble the library repos use would be written and silently ignored.
+      # `npm_config_*` environment outranks both files, so it wins without touching the tree.
       env npm_config_registry="$QITS_NPM_PROXY_URL" \
           "npm_config_@qits:registry=$QITS_NPM_REGISTRY_URL" \
           pnpm install --frozen-lockfile
@@ -41,10 +28,3 @@ steps:
       pnpm test
 
       pnpm build
-
-      # The tag is the whole contract with qits-cd: <registry>/<repository>/<repo name>:<sha>.
-      # No --network flag: the Dockerfile fetches nothing, see its header.
-      ref="$QITS_REGISTRY/$QITS_IMAGE_REPOSITORY/qits-spa-home:$QITS_CI_SHA"
-      docker build -t "$ref" -f docker/Dockerfile .
-      docker push "$ref"
-      docker rmi "$ref" || true

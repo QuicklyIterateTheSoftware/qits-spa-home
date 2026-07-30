@@ -1,6 +1,0 @@
-# The Dockerfile COPYs exactly two things — the built bundle and the nginx config — so the
-# context is allow-listed down to them. Everything else (sources, node_modules, .git) never
-# travels to the daemon, and a COPY of anything new must be added here to work, loudly.
-*
-!dist/qits-spa-home/browser
-!docker/nginx.conf

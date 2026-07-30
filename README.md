@@ -2,11 +2,11 @@
 
 The platform's landing page — and the consumer that closes the npm loop. An Angular 21 application
 that installs `@qits/ui-components` and `@qits/angular` from qits' own registry as ordinary semver
-dependencies, and ships as an nginx image its own pipeline builds and qits-cd deploys.
+dependencies. It ships no image of its own: **qits-gateway serves it via Quinoa**, carrying this
+repository as a git submodule at its ui-dir and packaging the bundle into the gateway build.
 
-Nothing here is a demo harness. The two packages arrive as tarballs from `qits-artifacts`, every
-other dependency arrives through that service's pull-through cache of npmjs, and the image wraps
-the `dist/` that the pipeline's own tested build produced — the Dockerfile fetches nothing.
+Nothing here is a demo harness. The two packages arrive as tarballs from `qits-artifacts`, and
+every other dependency arrives through that service's pull-through cache of npmjs.
 
 ## The .npmrc
 
@@ -24,9 +24,8 @@ publishes, and an install has no such pre-flight, so there is nothing to carry.
 
 `localhost:8081` is the local platform's host-published qits-artifacts port, and it serves the one
 consumer the file exists for: **a developer on the deployment host**, dialling it directly inside
-the trusted surface. The image build reads no registry at all — the Dockerfile is hermetic (see its
-header for why a build that fetches cannot work on every daemon this platform targets), and CI
-overrides the file with environment.
+the trusted surface. CI overrides the file with environment, and the gateway's build consumes a
+bundle that was built where the registry is reachable — nothing else ever reads it.
 
 Access from anywhere else goes through the gateway's usual session auth and is out of scope.
 
@@ -34,7 +33,7 @@ Access from anywhere else goes through the gateway's usual session auth and is o
 so the `cat > ~/.npmrc` preamble the library repos use would be silently ignored here. The pipeline
 sets `npm_config_registry` / `npm_config_@qits:registry` from `$QITS_NPM_PROXY_URL` /
 `$QITS_NPM_REGISTRY_URL` instead — environment outranks both files, and the working tree stays as
-it was pushed, which is what lets the image step (a fresh clone of its own) use the committed file.
+it was pushed.
 
 **The lockfile is portable.** pnpm records `name@version` plus an integrity hash and no URL, so
 `pnpm-lock.yaml` names no host and no port: the same lockfile resolves against `localhost:8081`, a
@@ -77,30 +76,19 @@ capture button never mounts, and the page's own Capture action says why rather t
 mysteriously. It is also the single file a deployment replaces when there is something to point at,
 and its shape is `@qits/angular`'s, not this repo's invention.
 
-## The image
+## Serving
 
-```bash
-pnpm build
-docker build -t qits-spa-home:dev -f docker/Dockerfile .
-docker run --rm -p 8080:8080 qits-spa-home:dev
-```
+This repository produces a bundle, not a container. `qits-gateway` includes this repo as a git
+submodule at its Quinoa ui-dir, builds the bundle into its own image, and serves it at the front
+door — SPA fallback included, so client-side routes survive a refresh. The gateway's own
+`GET /api/config.json` answers instead of the `public/api/config.json` stub, which exists so a
+standalone `ng serve` still has the shape the `@qits/angular` gate expects.
 
-The Dockerfile is hermetic — it COPYs the `dist/` that `pnpm build` just produced; nginx serves
-`dist/qits-spa-home/browser` on **8080** — the port every qits component listens on inside its
-container — with an SPA fallback (`try_files $uri $uri/ /index.html`) so a client-side route
-survives a refresh. Only hashed bundles are cached long; `index.html` and `api/config.json` never
-are.
+Local image-less serving is just `pnpm start`. Updating what the gateway ships is a push here
+(keeps main green) followed by the gateway's own pipeline run, which picks up this repo's `main`.
 
 ## Pipeline
 
-`.config/qits/ci-post-receive.yml`, one step on `node-docker-base` with `docker: true`: install
-(registries from the environment), lint, test, build — then `docker build` and push
-`qits-spa-home:$QITS_CI_SHA` to `$QITS_REGISTRY/$QITS_IMAGE_REPOSITORY`, the tag qits-cd resolves
-an application by.
-
-One step rather than two is load-bearing, not convenience: steps share no state, and a build
-container spawned by the host's daemon cannot reach the registry on every daemon this platform
-targets (the pipeline file records the specifics). So the install and build happen in the step
-container — which is on qits-net — and the image build only COPYs the result out of the step's own
-checkout. The image is still built from a tree that went green: the same step just proved it, three
-commands earlier.
+`.config/qits/ci-post-receive.yml`, one ordinary sandboxed step on `node-base`: install
+(registries from the environment), lint, test, build. No docker socket, no publish, no image —
+the gateway's pipeline is where the bundle becomes deployable.
