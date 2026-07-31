@@ -31,7 +31,13 @@ describe('App', () => {
     // The root route activates QitsMainLayout, and Home renders in the outlet it owns.
     const layout = harness.routeNativeElement as HTMLElement;
     expect(layout.tagName.toLowerCase()).toBe('qits-main-layout');
-    expect(layout.querySelectorAll('.qits-layout-link').length).toBeGreaterThan(1);
+
+    // The navigation is the library's, and this asserts that the library's current one is what
+    // shipped: seven front doors, `/events/` among them since @qits/ui-components 0.0.3. A stale
+    // package resolves, builds and renders — the count is what notices.
+    const links = Array.from(layout.querySelectorAll<HTMLAnchorElement>('.qits-layout-link'));
+    expect(links).toHaveLength(7);
+    expect(links.map((link) => link.getAttribute('href'))).toContain('/events/');
 
     expect(layout.querySelector('h1')?.textContent).toContain('qits');
     expect(layout.querySelectorAll('qits-card')).toHaveLength(2);

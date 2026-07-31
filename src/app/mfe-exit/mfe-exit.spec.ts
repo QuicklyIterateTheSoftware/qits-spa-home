@@ -51,6 +51,16 @@ describe('MfeExit', () => {
     expect((harness.routeNativeElement as HTMLElement).textContent).toContain('Taking you there');
   });
 
+  it('lets go of a segment the chrome links to but this app does not own', async () => {
+    const harness = await RouterTestingHarness.create('/');
+
+    // `/events/` is the newest front door in QITS_NAV_LINKS, and this app knows nothing about it
+    // beyond that — the hand-off is what makes a nav entry for a service reachable from here.
+    await harness.navigateByUrl('/events/42');
+
+    expect(leave).toHaveBeenCalledWith('/events/42');
+  });
+
   it('hands over the URL that was asked for, not the one still in the address bar', async () => {
     const harness = await RouterTestingHarness.create('/');
 
