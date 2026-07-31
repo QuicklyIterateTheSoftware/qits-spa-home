@@ -1,16 +1,11 @@
+/* The layout's content area supplies the outer padding and the scroll; this is only the measure. */
 .page {
   max-width: 720px;
   margin: 0 auto;
-  padding: 48px 20px 64px;
+  padding: 24px 4px 48px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-}
-
-.masthead-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .masthead h1 {

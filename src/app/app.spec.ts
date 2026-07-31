@@ -25,10 +25,25 @@ describe('App', () => {
     expect(shell.querySelector('h1')).toBeNull();
   });
 
-  it('routes the root URL to the landing page', async () => {
+  it('routes the root URL to the landing page, inside the shared layout', async () => {
     const harness = await RouterTestingHarness.create('/');
 
-    expect(harness.routeNativeElement?.querySelector('h1')?.textContent).toContain('qits');
-    expect(harness.routeNativeElement?.querySelectorAll('qits-card')).toHaveLength(2);
+    // The root route activates QitsMainLayout, and Home renders in the outlet it owns.
+    const layout = harness.routeNativeElement as HTMLElement;
+    expect(layout.tagName.toLowerCase()).toBe('qits-main-layout');
+    expect(layout.querySelectorAll('.qits-layout-link').length).toBeGreaterThan(1);
+
+    expect(layout.querySelector('h1')?.textContent).toContain('qits');
+    expect(layout.querySelectorAll('qits-card')).toHaveLength(2);
+  });
+
+  it('keeps the catch-all outside the layout, so leaving does not paint chrome', async () => {
+    const harness = await RouterTestingHarness.create('/projects/42');
+
+    const page = harness.routeNativeElement as HTMLElement;
+    expect(page.tagName.toLowerCase()).toBe('app-mfe-exit');
+    expect(
+      (harness.fixture.nativeElement as HTMLElement).querySelector('qits-main-layout'),
+    ).toBeNull();
   });
 });

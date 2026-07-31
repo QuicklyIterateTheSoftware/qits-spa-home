@@ -1,9 +1,9 @@
-<main class="page">
+<!-- A <div>, not a <main>: QitsMainLayout renders this page inside its own <main>, and a document
+     gets one. The "home" badge went the same way — the layout's navigation already marks which of
+     the six apps you are in. The heading stays: it is the page's title, not chrome. -->
+<div class="page">
   <header class="masthead">
-    <div class="masthead-title">
-      <h1>qits</h1>
-      <qits-badge label="home" tone="info" />
-    </div>
+    <h1>qits</h1>
     <p class="lede">
       The platform's landing page. Everything it is built from was installed from the platform's own
       npm registry, and the gateway serving it was built by the platform's own pipeline.
@@ -62,4 +62,4 @@
       <p class="capture-message">{{ captureMessage() }}</p>
     }
   </qits-card>
-</main>
+</div>

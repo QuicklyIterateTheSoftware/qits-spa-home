@@ -21,6 +21,11 @@ describe('Home', () => {
     expect(el(fixture).querySelector('h1')?.textContent).toContain('qits');
   });
 
+  it('renders no landmark of its own — QitsMainLayout owns the <main>', async () => {
+    const fixture = await render();
+    expect(el(fixture).querySelector('main')).toBeNull();
+  });
+
   it('lists every origin with its badge', async () => {
     const fixture = await render();
     const rows = el(fixture).querySelectorAll('.origins li');

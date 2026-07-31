@@ -70,9 +70,12 @@ npm run build        # dist/qits-spa-home/browser
 
 ## The page
 
-`src/app/app.ts` is the shell and holds a single `<router-outlet>`; the landing page itself is
-`src/app/home/home.ts`, a standalone component behind the `''` route that builds its content out
-of `<qits-card>`, `<qits-badge>` and `<qits-button>` from `@qits/ui-components`.
+`src/app/app.ts` is the shell and holds a single `<router-outlet>`. Under it, `''` activates
+`<qits-main-layout>` from `@qits/ui-components` — the platform chrome, a sidebar from 768px up and
+a burger below — as a **route** component, so the bar and the navigation are built once and survive
+navigation. The landing page itself is `src/app/home/home.ts`, a standalone component behind that
+layout's own `''` child, building its content out of `<qits-card>`, `<qits-badge>` and
+`<qits-button>`. It renders no `<main>` and no app title of its own: the layout supplies both.
 
 ## Routing, and the one thing this SPA does differently
 
@@ -81,9 +84,16 @@ its wildcard route means one unambiguous thing: a bad URL inside its own app. **
 mounted at the gateway root**, which makes the same wildcard ambiguous — `/projects` is not a typo,
 it is another micro frontend — so the catch-all has to be able to *let go* of a URL.
 
-`src/app/mfe-exit/` is that catch-all, and it holds **no list of segments**: which segment belongs
-to which service is the gateway's knowledge, and a copy of it here would be a second source of
-truth that rots in silence. It decides on how the URL arrived instead:
+`src/app/mfe-exit/` is that catch-all, and it sits **outside the layout**, a sibling of the `''`
+route rather than a child of it: its job is to leave this application, and painting the chrome
+around a page the browser is already leaving would flash a navigation on the way out.
+
+It holds **no list of segments**: which segment belongs to which service is the gateway's
+knowledge, and a copy of it here would be a second source of truth that rots in silence. The
+layout does ship a list — `QITS_NAV_LINKS`, the six front doors it renders as plain anchors — but
+that is a menu, not a routing table: it holds `/ci/` and never `/ci/runs/42`, and a service the
+library has not been taught about still owns its URLs. The catch-all decides on how the URL
+arrived instead:
 
 | How `**` was reached                                                    | What it means                                                                                                     | What it does                                                                                             |
 | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
