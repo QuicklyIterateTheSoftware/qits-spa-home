@@ -33,11 +33,12 @@ describe('App', () => {
     expect(layout.tagName.toLowerCase()).toBe('qits-main-layout');
 
     // The navigation is the library's, and this asserts that the library's current one is what
-    // shipped: seven front doors, `/events/` among them since @qits/ui-components 0.0.3. A stale
+    // shipped: eight front doors, `/cd/` among them since @qits/ui-components 0.0.4. A stale
     // package resolves, builds and renders — the count is what notices.
     const links = Array.from(layout.querySelectorAll<HTMLAnchorElement>('.qits-layout-link'));
-    expect(links).toHaveLength(7);
+    expect(links).toHaveLength(8);
     expect(links.map((link) => link.getAttribute('href'))).toContain('/events/');
+    expect(links.map((link) => link.getAttribute('href'))).toContain('/cd/');
 
     expect(layout.querySelector('h1')?.textContent).toContain('qits');
     expect(layout.querySelectorAll('qits-card')).toHaveLength(2);

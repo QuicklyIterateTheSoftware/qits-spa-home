@@ -90,7 +90,7 @@ around a page the browser is already leaving would flash a navigation on the way
 
 It holds **no list of segments**: which segment belongs to which service is the gateway's
 knowledge, and a copy of it here would be a second source of truth that rots in silence. The
-layout does ship a list — `QITS_NAV_LINKS`, the seven front doors it renders as plain anchors — but
+layout does ship a list — `QITS_NAV_LINKS`, the eight front doors it renders as plain anchors — but
 that is a menu, not a routing table: it holds `/ci/` and never `/ci/runs/42`, and a service the
 library has not been taught about still owns its URLs. The catch-all decides on how the URL
 arrived instead:

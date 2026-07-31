@@ -30,7 +30,7 @@ export const LEAVE_APP = new InjectionToken<(url: string) => void>('qits.leave-a
  * What the `**` route does, and it is two different things depending on how it was reached.
  *
  * This app is mounted at the gateway ROOT, so a URL it does not recognise is not automatically a
- * mistake: `/projects`, `/ci`, `/observability`, `/artifacts`, `/workspaces`, `/events` and
+ * mistake: `/projects`, `/ci`, `/cd`, `/observability`, `/artifacts`, `/workspaces`, `/events` and
  * whatever ships next are other micro frontends, each owned by its own service behind the same
  * front door. The catch-all must therefore be able to *let go* of a URL, and it must do so without
  * holding a list of segments — which segment belongs to which service is the gateway's knowledge,

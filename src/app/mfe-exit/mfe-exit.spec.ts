@@ -54,11 +54,22 @@ describe('MfeExit', () => {
   it('lets go of a segment the chrome links to but this app does not own', async () => {
     const harness = await RouterTestingHarness.create('/');
 
-    // `/events/` is the newest front door in QITS_NAV_LINKS, and this app knows nothing about it
-    // beyond that — the hand-off is what makes a nav entry for a service reachable from here.
+    // `/events/` is a front door in QITS_NAV_LINKS, and this app knows nothing about it beyond
+    // that — the hand-off is what makes a nav entry for a service reachable from here.
     await harness.navigateByUrl('/events/42');
 
     expect(leave).toHaveBeenCalledWith('/events/42');
+  });
+
+  it('lets go of the newest front door too, so a fresh nav entry is never a client-side 404', async () => {
+    const harness = await RouterTestingHarness.create('/');
+
+    // `/cd/` is the newest front door in QITS_NAV_LINKS, added by @qits/ui-components 0.0.4. The
+    // chrome links to it from every page of this app, and nothing here routes it — a nav entry
+    // whose segment this app failed to let go of would render the 404 branch instead.
+    await harness.navigateByUrl('/cd/42');
+
+    expect(leave).toHaveBeenCalledWith('/cd/42');
   });
 
   it('hands over the URL that was asked for, not the one still in the address bar', async () => {
