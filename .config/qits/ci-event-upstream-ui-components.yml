@@ -1,0 +1,124 @@
+# The release train's first hop, seen from the consumer. qits-spa-ui-components releases, and this
+# pipeline writes the released version into this repository's manifest and force-pushes it as
+# maintenance/qits-spa-ui-components. That push runs .config/qits/ci-post-receive.yml, whose second
+# step releases this repository in turn — so a library release walks into its consumer with nobody
+# carrying it.
+#
+# THERE IS DELIBERATELY NO BRANCH CONDITION. SoftwareRelease does carry a `branch`, but it is the
+# SOURCE branch that was released — a workspace name, or a maintenance/<upstream> ref once this
+# train runs — and never main. The `branch: { exact: main }` that is right for a BuildSuccessful
+# trigger would match nothing here, ever. `repository` is the whole selection, and it holds the repo
+# id string, the identity every other contract on this platform carries.
+#
+# THE LOOP FOOTGUN, because this is the file where it bites. This repository's own releases publish
+# SoftwareRelease with repository qits-spa-home; the `exact` below is what keeps them out. Widen it
+# to a prefix like `qits-spa-` and this file triggers a run that releases this repo that publishes
+# the event that triggers this file, forever — each hop is a new event id, so qits-ci's at-most-once
+# dedupe never engages. It stops replays, not descendants. Review is the only guard today; see
+# qits-ci's README.
+event: SoftwareRelease
+when:
+  - repository: { exact: qits-spa-ui-components }
+steps:
+  - image: qits/build-images/node-base:latest
+    # The registry poll owns almost all of this budget: the upstream publishes its tarball from its
+    # own post-receive run, minutes after the event. Ten minutes of polling plus room for one
+    # lockfile resolution and a push.
+    timeout-seconds: 1200
+    script: |
+      # The daemon runs this with `bash -c` and no -e, so without this an early failure would be
+      # swallowed by the next command's exit code. -u is load-bearing too: every address this step
+      # needs arrives as environment, and an unset one must stop the step rather than resolve the
+      # @qits scope against npmjs.org or push to an empty URL.
+      set -eu
+
+      # THE EVENT, READ AS DATA. The payload reaches the container verbatim as one string in
+      # $QITS_EVENT_PAYLOAD, one of the four QITS_EVENT_* variables an event-triggered run carries
+      # (with QITS_EVENT_ID, QITS_EVENT_NAME and QITS_EVENT_OCCURRED_AT). node parses it because
+      # node-base carries no jq — measured, not assumed.
+      version=$(node -p 'JSON.parse(process.env.QITS_EVENT_PAYLOAD).version')
+      upstream=$(node -p 'JSON.parse(process.env.QITS_EVENT_PAYLOAD).repository')
+      echo "$upstream released $version"
+
+      # THE REGISTRY RACE, BOUNDED. SoftwareRelease is published when the release lands on the
+      # upstream's main; @qits/ui-components@$version reaches the registry only when the upstream's
+      # own post-receive run gets to its publish step, later. qits-ci's single run worker orders the
+      # two by construction today, but that is a happy accident and not a contract — a failed
+      # upstream build publishes nothing, ever. So this waits with a budget and goes red when the
+      # version never appears: a red run naming a version that does not exist is precisely the right
+      # diagnosis of a broken upstream build, and at-most-once delivery means nobody retries it
+      # quietly.
+      tries=60
+      until env npm_config_registry="$QITS_NPM_PROXY_URL" \
+                "npm_config_@qits:registry=$QITS_NPM_REGISTRY_URL" \
+                npm view "@qits/ui-components@$version" version >/dev/null 2>&1
+      do
+        tries=$((tries - 1))
+        if [ "$tries" -le 0 ]; then
+          echo "@qits/ui-components@$version never reached the registry"
+          exit 1
+        fi
+        sleep 10
+      done
+
+      # THE ORIGIN DANCE, AND IT RUNS BOTH WAYS HERE. ci-post-receive.yml explains why the committed
+      # lockfile names localhost:8081 and why that address does not exist in a step container; the
+      # difference is that this step also WRITES the lockfile. So the origins go in, so npm can
+      # resolve and fetch, and come back out, so the commit keeps the developer-host convention
+      # docs/project-setup-quinoa-angular.md requires. The integrity hashes are what make both
+      # rewrites safe: bytes from either address must still hash the same.
+      npm_origin=$(node -p 'new URL(process.env.QITS_NPM_PROXY_URL).origin')
+      sed -i -E "s#(\"resolved\": \")https?://[^/\"]+#\1$npm_origin#" package-lock.json
+
+      # ENVIRONMENT, NOT A FILE, for the same reason as the test step: this repository COMMITS an
+      # .npmrc and npm ranks a project .npmrc above ~/.npmrc, so a written ~/.npmrc would be
+      # silently ignored. npm_config_* outranks both.
+      #
+      # --package-lock-only because nothing here builds: the manifest and the lockfile are this
+      # step's whole product, and the maintenance push's own test step is what installs and proves
+      # them. The caret matches the pin style of the tree. Re-resolving the lockfile may also move
+      # other packages within the ranges they already carry; that is what the tests on the
+      # maintenance push are for.
+      env npm_config_registry="$QITS_NPM_PROXY_URL" \
+          "npm_config_@qits:registry=$QITS_NPM_REGISTRY_URL" \
+          npm install --package-lock-only --no-audit --no-fund "@qits/ui-components@^$version"
+
+      sed -i -E "s#(\"resolved\": \")https?://[^/\"]+#\1http://localhost:8081#" package-lock.json
+
+      # And the assertion that the way back was complete, because npm writes the fresh entries with
+      # the origin it installed from. A missed rewrite would commit an address no developer on the
+      # host can reach, and the failure would surface far from here.
+      if grep '"resolved": "' package-lock.json | grep -v '"resolved": "http://localhost:8081/'; then
+        echo "a foreign origin survived in package-lock.json"
+        exit 1
+      fi
+
+      git add package.json package-lock.json
+
+      # An empty diff means the tree already carries this pin — a re-delivered event rather than a
+      # hop. Say so and stop, rather than going red or force-pushing a branch with nothing on it.
+      if git diff --cached --quiet; then
+        echo "@qits/ui-components@^$version is already the pin - nothing to hop"
+        exit 0
+      fi
+
+      # The identity is the train, because nobody typed this commit. It is spelled with -c rather
+      # than configured: a step container carries no git config of its own, and this repository is
+      # the only place the name belongs.
+      #
+      # bump(<artifact>@<version>): <text> is the release(<version>): family's sibling, machine
+      # locatable by prefix, and it is reused verbatim as the release summary by the maintenance
+      # step — which is why it stays well inside that field's 100 characters.
+      git -c user.name="qits release train" -c user.email="release-train@qits.local" \
+          commit -q -m "bump(@qits/ui-components@$version): follow the $upstream release"
+
+      # maintenance/<upstream repo id>: one branch per upstream, so two libraries releasing at once
+      # land on two branches instead of the second erasing the first's pending hop. The repo id
+      # arrives in the payload and is a plain slug, so the composed ref needs no quoting archaeology
+      # — the artifact name belongs to humans and is in the commit subject instead.
+      #
+      # FORCE, because the branch is a pending hop rather than history: a newer release supersedes
+      # an older one outright, and a run still queued for the superseded sha discards itself. This
+      # passes with branch protection ON and needs no push option and no token: the git host's hook
+      # guards only the ref HEAD names and lets every other ref through.
+      git push --force "$QITS_CI_REPOSITORY_URL" "HEAD:refs/heads/maintenance/$upstream"

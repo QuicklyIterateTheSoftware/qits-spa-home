@@ -158,6 +158,29 @@ Local image-less serving is just `npm start`. Updating what the gateway ships is
 
 ## Pipeline
 
-`.config/qits/ci-post-receive.yml`, one ordinary sandboxed step on `node-base`: the lockfile origin
-swap, `npm ci` (registries from the environment), lint, test, build. No docker socket, no publish,
-no image — the gateway's pipeline is where the bundle becomes deployable.
+`.config/qits/ci-post-receive.yml` runs on every push. Its first step is the ordinary sandboxed one
+on `node-base`: the lockfile origin swap, `npm ci` (registries from the environment), lint, test,
+build. No docker socket, no publish, no image — the gateway's pipeline is where the bundle becomes
+deployable.
+
+Its second step is bound to `branches: [{prefix: maintenance/}]` and does nothing else: it asks
+qits-workspaces to **release** this repository, which merges the branch into `main`, stamps a
+version and publishes a `SoftwareRelease`. On every other push it is recorded `SKIPPED` with
+`[step not bound to branch <branch>]`. "Release only if the tests passed" needs no machinery — a
+failed step stops the run, so the second step is simply never reached.
+
+## The release train
+
+This repository is the first consumer on it. `.config/qits/ci-event-upstream-ui-components.yml`
+triggers on `SoftwareRelease` from `qits-spa-ui-components`: it waits for the released version to
+reach the registry, writes `^<version>` into `package.json`, regenerates the lockfile, commits
+`bump(@qits/ui-components@<version>): …` as `qits release train`, and force-pushes
+`maintenance/qits-spa-ui-components`. That push runs the pipeline above, whose second step releases
+this repository — one hop, and the next `SoftwareRelease` is this repo's own.
+
+Two facts in that file are easy to get backwards, and both are commented in place. The trigger
+matches `repository` and **never** `branch`, because `SoftwareRelease.branch` is the *source* branch
+that was released and is never `main`. And the origin swap runs **both ways**: in, so npm can
+resolve, and back out to `localhost:8081`, so the committed lockfile keeps the developer-host
+convention. The train stops after this repository: `qits-gateway` consumes it as a gitlink, not as a
+manifest range, and no trigger file declares that edge.

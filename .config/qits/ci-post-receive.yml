@@ -4,6 +4,10 @@
 # packaged and served by qits-gateway, which carries this repo as a git submodule at its Quinoa
 # ui-dir and builds it into the gateway image — so this pipeline's job is to keep main green
 # (install, lint, test, build), and the gateway's pipeline is where the bundle becomes deployable.
+#
+# The second step is the release train's maintenance leg, and it is bound to maintenance/* branches.
+# On every other push it is recorded SKIPPED and changes nothing. "Release only after green tests"
+# needs no machinery: a failing step stops the loop, so the leg below is simply never reached.
 steps:
   - image: qits/build-images/node-base:latest
     timeout-seconds: 1800
@@ -55,3 +59,75 @@ steps:
       npm run test
 
       npm run build
+
+  # THE MAINTENANCE LEG. .config/qits/ci-event-upstream-ui-components.yml bumps a released
+  # dependency and force-pushes the result to maintenance/<upstream>; this step is what turns that
+  # branch into a release of this repository, and so into the next SoftwareRelease on the train.
+  #
+  # It runs after the tests above, in the same run, on the same push. That ordering IS the "only
+  # release if the tests passed" rule — no coupling machinery, no second pipeline, one run per push.
+  - image: qits/build-images/node-base:latest
+    branches:
+      - prefix: maintenance/
+    timeout-seconds: 300
+    script: |
+      set -eu
+
+      # DEFENCE IN DEPTH against an older or rolled-back qits-ci. An engine that does not know the
+      # `branches:` key above ignores it and runs this step on EVERY push — feature branches
+      # included — so the branch is asserted here as well. Free when the filter works, and a loud
+      # red step instead of an accidental release when it does not.
+      case "$QITS_CI_BRANCH" in
+        maintenance/*) ;;
+        *) echo "not a maintenance branch: $QITS_CI_BRANCH"; exit 1 ;;
+      esac
+
+      # The bump commit's subject, reused verbatim as the release summary. It is under the summary
+      # field's 100 characters by construction — the bump pipeline's convention is what keeps it so.
+      summary=$(git log -1 --format=%s)
+
+      # RELEASE, not merge and not integrate. Releasing is the only door onto main: it stamps a
+      # version, writes one two-parent commit and publishes SoftwareRelease. Integrating targets the
+      # branch's PARENT and would refuse with RELEASE_REQUIRED when that parent is main.
+      #
+      # The step self-identifies entirely from injected environment, so no deployment address is
+      # spelled here: $QITS_WORKSPACES_URL is qits-workspaces' root (scheme, host and port, no path
+      # — the path is the caller's to spell), $QITS_CI_REPO_ID and $QITS_CI_BRANCH are this run's.
+      #
+      # The POST goes through node because node-base carries no jq and promises no curl (measured);
+      # node has fetch built in and needs nothing installed. Statuses: 200 is the receipt and prints
+      # it, a 409 saying the branch is already released is a replayed push finding its work done and
+      # is a success, and everything else is red with the body on screen. Note the body is read
+      # defensively — the "cannot release main into itself" refusal is a plain 400 with no `reason`.
+      node -e '
+        const [url, branch, summary] = process.argv.slice(1);
+        fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ branch, summary }),
+        })
+          .then(async (res) => {
+            const text = await res.text();
+            let body = {};
+            try {
+              body = JSON.parse(text);
+            } catch {
+              /* not JSON: the raw text is what gets printed below */
+            }
+            if (res.ok) {
+              console.log(`released ${body.version} as ${body.commitSha} from ${body.branch}`);
+              return;
+            }
+            if (res.status === 409 && body.reason === "ALREADY_INTEGRATED") {
+              console.log(`${branch} is already released - nothing to do`);
+              return;
+            }
+            console.error(`release refused: HTTP ${res.status} ${text}`);
+            process.exit(1);
+          })
+          .catch((err) => {
+            console.error(`release call failed: ${err.message}`);
+            process.exit(1);
+          });
+      ' "$QITS_WORKSPACES_URL/workspaces/api/branches/release?repositoryId=$QITS_CI_REPO_ID" \
+        "$QITS_CI_BRANCH" "$summary"
