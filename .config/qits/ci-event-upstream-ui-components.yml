@@ -4,11 +4,16 @@
 # step releases this repository in turn — so a library release walks into its consumer with nobody
 # carrying it.
 #
-# THERE IS DELIBERATELY NO BRANCH CONDITION. SoftwareRelease does carry a `branch`, but it is the
-# SOURCE branch that was released — a workspace name, or a maintenance/<upstream> ref once this
-# train runs — and never main. The `branch: { exact: main }` that is right for a BuildSuccessful
-# trigger would match nothing here, ever. `repository` is the whole selection, and it holds the repo
-# id string, the identity every other contract on this platform carries.
+# WHAT THE EVENT MEANS. SoftwareRelease says the artifact is in the registry and you can install it.
+# qits-ci publishes it only AFTER a release pipeline has actually published the package, once per
+# declared artifact, and the payload is four fields: {repository, version, packageType, packageName}.
+#
+# THERE IS DELIBERATELY NO BRANCH CONDITION, AND THERE IS NO BRANCH TO CONDITION ON. The payload
+# carries none, so the `branch: { exact: main }` that is right for a BuildSuccessful trigger would
+# match nothing here, ever. `repository` is the whole selection, and it holds the repo id string,
+# the identity every other contract on this platform carries. packageName and packageType say WHICH
+# artifact of the upstream this is, for a repository that publishes several; qits-spa-ui-components
+# publishes one, so matching on the repository alone is the whole answer today.
 #
 # THE LOOP FOOTGUN, because this is the file where it bites. This repository's own releases publish
 # SoftwareRelease with repository qits-spa-home; the `exact` below is what keeps them out. Widen it
@@ -21,9 +26,8 @@ when:
   - repository: { exact: qits-spa-ui-components }
 steps:
   - image: qits/build-images/node-base:latest
-    # The registry poll owns almost all of this budget: the upstream publishes its tarball from its
-    # own post-receive run, minutes after the event. Ten minutes of polling plus room for one
-    # lockfile resolution and a push.
+    # The lockfile resolution owns this budget now. It used to be ten minutes of registry polling
+    # plus room for that resolution and a push; the poll is gone and the margin stayed.
     timeout-seconds: 1200
     script: |
       # The daemon runs this with `bash -c` and no -e, so without this an early failure would be
@@ -40,26 +44,19 @@ steps:
       upstream=$(node -p 'JSON.parse(process.env.QITS_EVENT_PAYLOAD).repository')
       echo "$upstream released $version"
 
-      # THE REGISTRY RACE, BOUNDED. SoftwareRelease is published when the release lands on the
-      # upstream's main; @qits/ui-components@$version reaches the registry only when the upstream's
-      # own post-receive run gets to its publish step, later. qits-ci's single run worker orders the
-      # two by construction today, but that is a happy accident and not a contract — a failed
-      # upstream build publishes nothing, ever. So this waits with a budget and goes red when the
-      # version never appears: a red run naming a version that does not exist is precisely the right
-      # diagnosis of a broken upstream build, and at-most-once delivery means nobody retries it
-      # quietly.
-      tries=60
-      until env npm_config_registry="$QITS_NPM_PROXY_URL" \
-                "npm_config_@qits:registry=$QITS_NPM_REGISTRY_URL" \
-                npm view "@qits/ui-components@$version" version >/dev/null 2>&1
-      do
-        tries=$((tries - 1))
-        if [ "$tries" -le 0 ]; then
-          echo "@qits/ui-components@$version never reached the registry"
-          exit 1
-        fi
-        sleep 10
-      done
+      # THE REGISTRY CHECK, ONCE, AND IT IS NOT A RACE GUARD. There is no race left to guard: this
+      # event fires only after the upstream's release pipeline published the package, so by the time
+      # the step runs the version is in the registry — that is what the event means. The probe stays
+      # as DEFENCE IN DEPTH, asserting the event meant what it says before the bump writes the
+      # version into the manifest. Red here is a broken contract rather than a slow upstream, and
+      # at-most-once delivery means nobody retries it quietly.
+      if ! env npm_config_registry="$QITS_NPM_PROXY_URL" \
+               "npm_config_@qits:registry=$QITS_NPM_REGISTRY_URL" \
+               npm view "@qits/ui-components@$version" version >/dev/null 2>&1
+      then
+        echo "SoftwareRelease said @qits/ui-components@$version is published, but the registry does not have it"
+        exit 1
+      fi
 
       # THE ORIGIN DANCE, AND IT RUNS BOTH WAYS HERE. ci-post-receive.yml explains why the committed
       # lockfile names localhost:8081 and why that address does not exist in a step container; the
