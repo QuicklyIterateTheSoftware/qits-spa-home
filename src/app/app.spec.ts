@@ -38,7 +38,7 @@ describe('App', () => {
     const links = Array.from(layout.querySelectorAll<HTMLAnchorElement>('.qits-layout-link'));
     expect(links).toHaveLength(8);
     expect(links.map((link) => link.getAttribute('href'))).toContain('/events/');
-    expect(links.map((link) => link.getAttribute('href'))).toContain('/cd/');
+    expect(links.map((link) => link.getAttribute('href'))).toContain('/platform-deployments/');
 
     expect(layout.querySelector('h1')?.textContent).toContain('qits');
     expect(layout.querySelectorAll('qits-card')).toHaveLength(2);
