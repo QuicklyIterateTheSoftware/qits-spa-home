@@ -54,7 +54,7 @@ describe('MfeExit', () => {
   it('lets go of a segment the chrome links to but this app does not own', async () => {
     const harness = await RouterTestingHarness.create('/');
 
-    // `/events/` is a front door in QITS_NAV_LINKS, and this app knows nothing about it beyond
+    // `/events/` is one of the platform's front doors, and this app knows nothing about it beyond
     // that — the hand-off is what makes a nav entry for a service reachable from here.
     await harness.navigateByUrl('/events/42');
 
@@ -64,9 +64,10 @@ describe('MfeExit', () => {
   it('lets go of the newest front door too, so a fresh nav entry is never a client-side 404', async () => {
     const harness = await RouterTestingHarness.create('/');
 
-    // `/cd/` is the newest front door in QITS_NAV_LINKS, added by @qits/ui-components 0.0.4. The
-    // chrome links to it from every page of this app, and nothing here routes it — a nav entry
-    // whose segment this app failed to let go of would render the 404 branch instead.
+    // A segment nothing here routes, standing in for whatever door the gateway adds next. The
+    // chrome links to every door from every page of this app, and this branch is what keeps a new
+    // one from rendering the 404 branch instead — the list is the gateway's now, so this app
+    // cannot know in advance which segments it will be asked to let go of.
     await harness.navigateByUrl('/cd/42');
 
     expect(leave).toHaveBeenCalledWith('/cd/42');

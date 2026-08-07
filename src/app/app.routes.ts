@@ -20,12 +20,12 @@ import { MfeExit } from './mfe-exit/mfe-exit';
  * wrapping it in the chrome would paint a navigation the browser is already leaving.
  *
  * Which segment belongs to which service is still the GATEWAY's knowledge, and there is
- * deliberately no copy of it here to fall out of date. The layout does carry a list —
- * `QITS_NAV_LINKS`, the destinations it renders as plain anchors — but that is a menu of front
- * doors, not a routing table: it holds `/ci/` and never `/ci/runs/42`, and a service the library
- * has not been taught about still owns its URLs. Consulting it from the catch-all would answer a
- * routing question with a navigation menu. `MfeExit` decides by *how* the URL was reached instead;
- * the argument for why that terminates is in its own comment.
+ * deliberately no copy of it here to fall out of date. The layout does render a list — the one the
+ * gateway answers `/main-navigation` with — but that is a menu of front doors, not a routing table:
+ * it holds `/ci/` and never `/ci/runs/42`, and a service whose door has not been added still owns
+ * its URLs. Consulting it from the catch-all would answer a routing question with a navigation
+ * menu. `MfeExit` decides by *how* the URL was reached instead; the argument for why that
+ * terminates is in its own comment.
  */
 export const routes: Routes = [
   { path: '', component: QitsMainLayout, children: [{ path: '', component: Home }] },

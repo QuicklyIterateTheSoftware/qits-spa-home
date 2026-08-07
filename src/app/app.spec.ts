@@ -2,8 +2,20 @@ import { TestBed } from '@angular/core/testing';
 import { provideLocationMocks } from '@angular/common/testing';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
+import { provideQitsNavigationLinks } from '@qits/ui-components';
 import { App } from './app';
 import { routes } from './app.routes';
+
+/**
+ * A fixture navigation, not the platform's. `provideQitsNavigationLinks` answers the layout's
+ * `QITS_NAVIGATION` from a literal, so nothing is fetched — there is no `/main-navigation` request
+ * to flush before `whenStable()` resolves, and this file stays about the shell.
+ */
+const NAV = [
+  { label: 'Home', href: '/' },
+  { label: 'Events', href: '/events/' },
+  { label: 'Deployments', href: '/platform-deployments/' },
+] as const;
 
 /**
  * The shell owns one thing — the outlet — so that is what is asserted here, plus the route table
@@ -12,7 +24,7 @@ import { routes } from './app.routes';
 describe('App', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
-      providers: [provideRouter(routes), provideLocationMocks()],
+      providers: [provideRouter(routes), provideLocationMocks(), provideQitsNavigationLinks(NAV)],
     });
   });
 
@@ -32,13 +44,17 @@ describe('App', () => {
     const layout = harness.routeNativeElement as HTMLElement;
     expect(layout.tagName.toLowerCase()).toBe('qits-main-layout');
 
-    // The navigation is the library's, and this asserts that the library's current one is what
-    // shipped: eight front doors, `/cd/` among them since @qits/ui-components 0.0.4. A stale
-    // package resolves, builds and renders — the count is what notices.
+    // This used to assert a literal count, on the reasoning that a stale @qits/ui-components
+    // resolves, builds and renders, and the count is what notices. That check is gone because the
+    // thing it watched is gone: the doors are no longer compiled into the package, they are what
+    // qits-gateway answers `/main-navigation` with. How many there are is a deployment fact, and
+    // asserting it belongs to the gateway's own spec.
+    //
+    // What is left here is still worth having: this app mounts the chrome, and the chrome renders
+    // exactly what it was told — the fixture above, not a list of its own.
     const links = Array.from(layout.querySelectorAll<HTMLAnchorElement>('.qits-layout-link'));
-    expect(links).toHaveLength(8);
-    expect(links.map((link) => link.getAttribute('href'))).toContain('/events/');
-    expect(links.map((link) => link.getAttribute('href'))).toContain('/platform-deployments/');
+    expect(links).toHaveLength(NAV.length);
+    expect(links.map((link) => link.getAttribute('href'))).toEqual(NAV.map((link) => link.href));
 
     expect(layout.querySelector('h1')?.textContent).toContain('qits');
     expect(layout.querySelectorAll('qits-card')).toHaveLength(2);
